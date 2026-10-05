@@ -5,6 +5,8 @@
 <h2 align="center">Looped-DiT: Looped Diffusion Transformer</h2>
 
 <p align="center">
+  <a href="https://arxiv.org/abs/2609.40305"><img src="https://img.shields.io/badge/arXiv-2609.40305-b31b1b?logo=arxiv" alt="arXiv: 2609.40305" /></a>
+  &nbsp;
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow" alt="License: MIT" /></a>
 </p>
 
