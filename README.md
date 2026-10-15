@@ -39,6 +39,7 @@ This repository includes:
 - [Installation](#installation)
 - [Inference](#inference)
   - [Recommended Inference Settings](#recommended-inference-settings)
+- [Community Integrations](#community-integrations)
 - [Evaluation](#evaluation)
   - [Evaluation Metrics](#evaluation-metrics)
   - [Evaluate Checkpoints](#evaluate-checkpoints)
@@ -133,6 +134,14 @@ These are the settings of the paper's main results and the defaults of the scrip
 | Loop depth | 4, the trained depth (other depths work without retraining) |
 | Weights / precision | EMA, bfloat16 |
 | Resolution | 512 x 512 |
+
+## Community Integrations
+
+- [ComfyUI-LoopedDiT](https://github.com/hiroki-abe-58/ComfyUI-LoopedDiT): An
+  independently maintained ComfyUI integration for the released B/16 and B/32
+  checkpoints, with image-generation and loop-depth comparison nodes and example
+  workflows. Tested on Windows 11 with an RTX 5090. See the linked repository for
+  installation, comparisons against the official sampler, and limitations.
 
 ## Evaluation
 
