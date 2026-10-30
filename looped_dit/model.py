@@ -337,6 +337,23 @@ class LoopedMMDiT(nn.Module):
         start = self.pre if self.share_loop_weights else self.pre + (r - 1) * self.core
         return self.blocks[start : start + self.core]
 
+    def embed(self, x: torch.Tensor, text: torch.Tensor, text_mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Embeddings and pre-loop blocks: inputs -> loop state h_0 (image and text tokens)."""
+        text = torch.where(text_mask.to(torch.bool)[:, :, None], text, self.mask_token.to(text.dtype))
+        img = self.img_embed(x) + self.pos_embed.to(device=x.device, dtype=x.dtype)
+        txt = self.txt_embed(text)
+        for block in self.txt_blocks:
+            txt = block(txt)
+        for block in self.blocks[: self.pre]:
+            img, txt = block(img, txt)
+        return img, txt
+
+    def loop_pass(self, img: torch.Tensor, txt: torch.Tensor, r: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Loop pass r (1-based): h_{r-1} -> h_r."""
+        for block in self.loop_blocks(r):
+            img, txt = block(img, txt)
+        return img, txt
+
     def decode(self, img: torch.Tensor, txt: torch.Tensor) -> torch.Tensor:
         """Post-loop blocks and output head: a loop state -> x0 prediction."""
         for block in self.blocks[len(self.blocks) - self.post :]:
@@ -365,17 +382,10 @@ class LoopedMMDiT(nn.Module):
         if any(not 1 <= r < n for r in exits):
             raise ValueError(f"exit_loops must lie in [1, {n}), got {exits}")
 
-        text = torch.where(text_mask.to(torch.bool)[:, :, None], text, self.mask_token.to(text.dtype))
-        img = self.img_embed(x) + self.pos_embed.to(device=x.device, dtype=x.dtype)
-        txt = self.txt_embed(text)
-        for block in self.txt_blocks:
-            txt = block(txt)
-        for block in self.blocks[: self.pre]:
-            img, txt = block(img, txt)
+        img, txt = self.embed(x, text, text_mask)
         states = {}
         for r in range(1, n + 1):
-            for block in self.loop_blocks(r):
-                img, txt = block(img, txt)
+            img, txt = self.loop_pass(img, txt, r)
             if r in exits:
                 states[r] = (img, txt)
         out = self.decode(img, txt)

@@ -5,6 +5,9 @@
 Each benchmark is generated with torchrun over `gpus` GPUs, then scored by its own
 script (GenEval: Mask2Former + CLIP, DPG-Bench: mPLUG, PRISM / CoReBench /
 SpatialGenEval: a vLLM judge, TIIF-Bench: GPT-4o). Finished benchmarks are skipped on a rerun.
+
+With `controller` and `target_loops` (or `threshold`) set, sampling uses adaptive
+looping (looped_dit/adaptive) and scores.json also reports the measured average loops.
 """
 
 from __future__ import annotations
@@ -39,7 +42,8 @@ def main() -> None:
     cfg = load_yaml(parser.parse_args().config)
     out = Path(cfg["output_dir"])
     # Results are reused on a rerun, so an output directory belongs to one checkpoint and sampling setup.
-    settings = {key: cfg.get(key) for key in ("checkpoint", "gpus", "steps", "cfg_scale", "loops", "seed", "text_encoder")}
+    sampling = ("steps", "cfg_scale", "loops", "seed", "text_encoder", "controller", "target_loops", "threshold")
+    settings = {key: cfg.get(key) for key in ("checkpoint", "gpus", *sampling)}
     record = out / "settings.json"
     if record.exists() and json.loads(record.read_text()) != settings:
         raise SystemExit(f"{out} holds results of other settings (see {record}); choose a new output_dir")
@@ -49,7 +53,7 @@ def main() -> None:
     gpus = int(cfg.get("gpus", 1))
     launcher = [sys.executable, "-m", "torch.distributed.run", "--standalone", f"--nproc_per_node={gpus}"] if gpus > 1 else [sys.executable]
 
-    scores = {}
+    scores, loops = {}, {}
     for name, bench in cfg["benchmarks"].items():
         images, results = out / f"{name}_images", out / f"{name}_results"
         summary = results / "summary.json"
@@ -58,7 +62,7 @@ def main() -> None:
             run(launcher + ["-m", "looped_dit.eval.generate", "--benchmark", name, "--data", str(bench["data"]),
                             "--checkpoint", str(cfg["checkpoint"]), "--outdir", str(images),
                             "--samples-per-prompt", str(samples)]
-                + flags(cfg, ("steps", "cfg_scale", "loops", "seed", "text_encoder")))
+                + flags(cfg, sampling))
             results.mkdir(parents=True, exist_ok=True)
             if name == "geneval":
                 run([python["geneval"], str(GENEVAL_DIR / "evaluate_images.py"), str(images),
@@ -83,9 +87,21 @@ def main() -> None:
                     + (["--prism-script", str(bench["script"])] if name == "prism" else []) + flags(bench, JUDGE_OPTIONS))
         result = json.loads(summary.read_text())
         scores[name] = 100 * result["overall_score"] if name == "geneval" else result["overall"]
+        if cfg.get("controller"):
+            from ..adaptive.eval import loop_summary
 
-    (out / "scores.json").write_text(json.dumps(scores, indent=2))
-    print("\n".join(f"{name:>16}  {score:6.2f}" for name, score in scores.items()))
+            loops[name] = loop_summary(images)
+
+    report = dict(scores)
+    if loops:  # average loops per denoising step, per benchmark and over all images
+        count = sum(v["images"] for v in loops.values())
+        loops["all"] = {"images": count, "mean_loops": sum(v["images"] * v["mean_loops"] for v in loops.values()) / count}
+        report["mean_loops"] = {name: v["mean_loops"] for name, v in loops.items()}
+    (out / "scores.json").write_text(json.dumps(report, indent=2))
+    print("\n".join(f"{name:>16}  {score:6.2f}" + (f"  ({loops[name]['mean_loops']:.3f} loops)" if name in loops else "")
+                    for name, score in scores.items()))
+    if loops:
+        print(f"{'average loops':>16}  {loops['all']['mean_loops']:.3f}")
 
 
 if __name__ == "__main__":

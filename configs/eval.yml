@@ -8,6 +8,10 @@ steps: 100
 cfg_scale: 6.0
 loops: null            # inference loop depth; null = the trained depth
 seed: 0
+# Adaptive looping (README, "Adaptive Looping"): a calibrated controller and a target
+# average loop count (or a raw threshold) replace `loops`.
+# controller: ${OUTPUT_ROOT}/b32_controller/controller_calibrated.pt
+# target_loops: 1.5
 
 # Interpreters for scorers that need their own environment (default: the current one).
 # python:

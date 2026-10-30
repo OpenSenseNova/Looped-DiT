@@ -1,0 +1,47 @@
+# Loop controller for the released Looped-DiT B/32 (python -m looped_dit.adaptive.train).
+# The backbone stays frozen; labels are computed online from the fine-tuning data (nothing is cached).
+
+backbone: checkpoints/looped-dit-b32.pt   # hf download sensenova/Looped-DiT-B32 looped-dit-b32.pt --local-dir checkpoints
+weights: ema
+cfg_scale: 6.0                 # guidance of the labels = guidance of sampling
+sampling_steps: 100            # labels at t = i / 100, the inputs of the 100-step sampler
+
+# Controller: 4 queries, one cross-attention layer (8 heads), MLP head, timestep input; 1.05M parameters
+token_dim: 256
+num_queries: 4
+num_heads: 8
+ffn_ratio: 2
+loop_embed_dim: 64
+head_dims: [256, 64]
+
+# Data: Std-120K, as in configs/b32_finetune.yml; 5% of the captions are held out
+dataset: webdataset
+webdataset_sources:
+  blip3o_60k:
+    path: ${DATA_ROOT}/finetune/blip3o_60k
+    weight: 0.06
+  dalle3:
+    path: ${DATA_ROOT}/finetune/dalle3
+    weight: 0.016
+  sharegpt4o:
+    path: ${DATA_ROOT}/finetune/sharegpt4o
+    weight: 0.04
+shuffle_buffer: 1000
+num_workers: 12
+holdout_fraction: 0.05
+val_samples: 4096
+
+# Optimization: each image gives 3 rows (exits 1-3)
+batch_size: 256                # images per step (768 rows)
+micro_batch_size: 32
+num_steps: 20000
+warmup_steps: 200
+learning_rate: 3.0e-4
+weight_decay: 0.0
+huber_delta: 1.0
+seed: 0
+
+log_every: 50
+val_every: 500
+val_budgets: [1.25, 1.5, 2.0, 3.0]
+ckpt_every: 1000

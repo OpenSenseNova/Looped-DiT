@@ -39,6 +39,7 @@ This repository includes:
 - [Installation](#installation)
 - [Inference](#inference)
   - [Recommended Inference Settings](#recommended-inference-settings)
+- [Adaptive Looping](#adaptive-looping)
 - [Community Integrations](#community-integrations)
 - [Evaluation](#evaluation)
   - [Evaluation Metrics](#evaluation-metrics)
@@ -67,7 +68,9 @@ Spatial denotes SpatialGenEval. TIIF denotes the short-prompt version of TIIF-Be
 ```text
 .
 ├── configs/          # training configs (B/32, B/16, L/16) and the evaluation config
+│   └── adaptive/     # loop controller config
 ├── looped_dit/       # model, training, sampling
+│   ├── adaptive/     # adaptive looping: loop controller, training, calibration, sampling
 │   └── eval/         # benchmark image generation and scoring
 ├── tools/            # dataset preparation
 ├── tests/            # unit tests
@@ -134,6 +137,41 @@ These are the settings of the paper's main results and the defaults of the scrip
 | Loop depth | 4, the trained depth (other depths work without retraining) |
 | Weights / precision | EMA, bfloat16 |
 | Resolution | 512 x 512 |
+
+## Adaptive Looping
+
+A small controller (`looped_dit/adaptive/`) decides after each loop pass whether to run
+another. The backbone stays frozen. A threshold on the controller's score sets the average
+loop count.
+
+Train a controller for a checkpoint on the fine-tuning data (5% of the captions are held
+out for validation and calibration):
+
+```bash
+torchrun --nproc_per_node=8 -m looped_dit.adaptive.train \
+    --config configs/adaptive/b32_controller.yml --output-dir outputs/b32_controller
+```
+
+Calibrate it for the average loop counts to sample with (measured on full sampling runs
+of held-out captions):
+
+```bash
+torchrun --nproc_per_node=8 -m looped_dit.adaptive.calibrate \
+    --controller outputs/b32_controller/checkpoints/controller_0020000.pt \
+    --target-loops 1.25 1.5 2 2.5 3 --out outputs/b32_controller/controller_calibrated.pt
+```
+
+Sample at a target average loop count:
+
+```bash
+python -m looped_dit.sample --checkpoint checkpoints/looped-dit-b32.pt \
+    --controller outputs/b32_controller/controller_calibrated.pt --target-loops 1.5 2 \
+    --prompt "a red cube on top of a blue sphere" --out adaptive.png
+```
+
+To evaluate, set `controller` and `target_loops` in the eval config in place of `loops`.
+`scores.json` then also reports the measured average loop count of each benchmark.
+`--threshold` (`threshold:` in the eval config) sets a threshold directly instead of a target.
 
 ## Community Integrations
 
